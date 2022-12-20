@@ -7,7 +7,11 @@ Iscosceles Applet is a minimal applet demonstrating principles from the ISO7816-
 Upon installation, the Isosceles Applet creates a Master File, a type of Dedicated File.
 
 ## Data Object Tags
-0x1E
+| Tag  | Name             | Description                                                   |
+| ---- | ---------------- | ------------------------------------------------------------- |
+| 0x1E | Answer To Select | Returned as the Answer To Select for a given Dedicated File.  |
+
+When selecting the applet, the ATS for the Master File is returned.
 
 
 ### License
