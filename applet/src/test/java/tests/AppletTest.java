@@ -4,7 +4,6 @@ import cardTools.CardManager;
 import cardTools.CardType;
 import org.junit.jupiter.api.*;
 
-import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 
 /**
@@ -14,58 +13,57 @@ import javax.smartcardio.ResponseAPDU;
  * @author xsvenda, Dusan Klinec (ph4r05)
  */
 public class AppletTest extends BaseTest {
-
+    /**
+     * Initialize the test
+     */
     public AppletTest() {
         setCardType(CardType.JCARDSIMLOCAL);
     }
 
     @BeforeAll
-    public static void setUpClass() throws Exception {
+    public static void setUpClass() {
     }
 
     @AfterAll
-    public static void tearDownClass() throws Exception {
+    public static void tearDownClass() {
     }
 
     @BeforeEach
-    public void setUpMethod() throws Exception {
+    public void setUpMethod() {
+        // Don't reset every time
         setSimulateStateful(true);
     }
 
     @AfterEach
-    public void tearDownMethod() throws Exception {
+    public void tearDownMethod() {
     }
 
-    // Test ATS
+    /**
+     * Ensure that the answer to select is compliant with ISO7816-4, table 63.
+     */
     @Test
-    public void testAts() throws Exception {
-        CardManager manager = connect();
+    public void testAppletAts() throws Exception {
+        // [Len] [AID] [Len] [Info] [Len] [Data]
+        byte[] installParams = new byte[] {(byte)0x0B, (byte)0x0F,(byte)0x49,(byte)0x53,(byte)0x4F,(byte)0x53,(byte)0x43,(byte)0x45,(byte)0x4C,(byte)0x45,(byte)0x53,(byte)0x01, (byte)0x00, (byte)0x00};
 
-        // The first time the answer to select is provided, it should be empty.
+        // 6F [11]
+        //    83 [02] 3F 00
+        //    84 [0B] 0F 49 53 4F 53 43 45 4C 45 53 01
+        byte[] validAnswerToSelect = new byte[] {
+                (byte)0x6f, (byte)0x11, (byte)0x83, (byte)0x02, (byte)0x3f, (byte)0x00,
+                (byte)0x84, (byte)0x0b, (byte)0x0f, (byte)0x49, (byte)0x53, (byte)0x4f,
+                (byte)0x53, (byte)0x43, (byte)0x45 ,(byte)0x4c, (byte)0x45, (byte)0x53,
+                (byte)0x01, (byte)0x90, (byte)0x00
+        };
+
+        // Pass install parameters to card manager
+        CardManager manager = connect(installParams);
+
+        // Answer to select should be an FCI structure
         ResponseAPDU atsResponse = manager.selectApplet();
         Assertions.assertNotNull(atsResponse);
         Assertions.assertEquals(0x9000, atsResponse.getSW());
         Assertions.assertNotNull(atsResponse.getBytes());
-        byte[] expectedResponse = new byte[]{(byte) 0x90, (byte) 0x00};
-        Assertions.assertArrayEquals(expectedResponse, atsResponse.getBytes());
-
-        // Put data new ATS (and a throwaway tag)
-        final byte TAG_DO_ATS = (byte)0xDE;
-        final byte[] TAG_DO_TEST = new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0x01};
-        byte[] testPutATS = new byte[]{TAG_DO_TEST[0], TAG_DO_TEST[1], TAG_DO_TEST[2], (byte) 0x02, (byte) 0xFF, (byte) 0xFF, TAG_DO_ATS, 0x08, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37};
-        final CommandAPDU putDataCommand = new CommandAPDU(0x00, 0xDB, 0x3F, 0x00, testPutATS);
-        final ResponseAPDU putDataResponse = manager.transmit(putDataCommand);
-        Assertions.assertNotNull(putDataResponse);
-        Assertions.assertEquals(0x9000, putDataResponse.getSW());
-        Assertions.assertNotNull(putDataResponse.getBytes());
-
-        // Verify new ATS
-        manager.disconnect(false);
-        ResponseAPDU atsResponse2 = manager.selectApplet();
-        Assertions.assertNotNull(atsResponse2);
-        Assertions.assertEquals(0x9000, atsResponse2.getSW());
-        Assertions.assertNotNull(atsResponse2.getBytes());
-        expectedResponse = new byte[]{(byte) 0x30, (byte) 0x31, (byte) 0x32, (byte) 0x33, (byte) 0x34, (byte) 0x35, (byte) 0x36, (byte) 0x37, (byte) 0x90, (byte) 0x00};
-        Assertions.assertArrayEquals(expectedResponse, atsResponse2.getBytes());
+        Assertions.assertArrayEquals(validAnswerToSelect, atsResponse.getBytes());
     }
 }

@@ -18,22 +18,22 @@ public class ElementaryFile {
     public DataObject[] _dataObjects;
 
     /**
-     * Filename for this dedicated file
+     * File identifier (2 bytes) for this dedicated file
      */
-    private byte[] _fileName;
+    private byte[] _fileIdentifier;
 
     /**
      * Initialize a new Dedicated File array
      * @param maxObjects Maximum number of objects this EF can contain
      * @param maxChildren Maximum number of children this EF can have.  Must be zero.
-     * @param filename Filename for this DF
+     * @param fileIdentifier Filename for this DF
      */
-    public ElementaryFile (short maxObjects, short maxChildren, byte[] filename) {
+    public ElementaryFile (short maxObjects, short maxChildren, byte[] fileIdentifier) {
         if (maxChildren != 0) {
             ISOException.throwIt(ISO7816.SW_UNKNOWN);
         }
         _dataObjects = new DataObject[maxObjects];
-        _fileName = filename;
+        _fileIdentifier = fileIdentifier;
     }
 
     /**
@@ -62,6 +62,14 @@ public class ElementaryFile {
         }
 
         return null;
+    }
+
+    /**
+     * Get the filename for a Elementary File
+     * @return filename
+     */
+    public byte[] GetFilename() {
+        return _fileIdentifier;
     }
 
     /**

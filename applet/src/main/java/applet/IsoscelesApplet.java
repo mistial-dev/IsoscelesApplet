@@ -42,6 +42,21 @@ public class IsoscelesApplet extends Applet implements ExtendedLength
 	private static final byte[] TAG_DO_ATS = new byte[] {(byte)0xDE};
 
 	/**
+	 * File control template.  See ISO/IEC 7816-4:2020(E) 7.4.2
+	 */
+	private static final byte[] TAG_FCI_TEMPLATE = {(byte)0x6F};
+
+	/**
+	 * File identifier tag.  See ISO/IEC 7816-4:2020(E) 7.4.3
+	 */
+	private static final byte[] TAG_FCI_FILE_IDENTIFIER = {(byte)0x83};
+
+	/**
+	 * Dedicated File Name tag.  See ISO/IEC 7816-4:2020(E) 7.4.3
+	 */
+	private static final byte[] TAG_FCI_DF_NAME = {(byte)0x84};
+
+	/**
 	 * Defines the maximum number of Data Objects the Master File can hold.
 	 */
 	private static final short MF_MAX_DATA_OBJECTS = 8;
@@ -49,12 +64,17 @@ public class IsoscelesApplet extends Applet implements ExtendedLength
 	/**
 	 * Transitory buffer size
 	 */
-	private static final short FIXED_TEMPORARY_BUFFER_SIZE = 32;
+	private static final short FIXED_TEMPORARY_BUFFER_SIZE = 64;
 
 	/**
 	 * Transitory buffer, used for writing small amounts of data back and forth.
 	 */
-	public byte[] fixedTemporaryBuffer = JCSystem.makeTransientByteArray(FIXED_TEMPORARY_BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
+	private byte[] fixedTemporaryBuffer = JCSystem.makeTransientByteArray(FIXED_TEMPORARY_BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
+
+	/**
+	 * Contains the Application Identifier (AID) the applet was installed with
+	 */
+	private byte[] applicationId;
 
 	/**
 	 * RNG used by the applet
@@ -95,14 +115,15 @@ public class IsoscelesApplet extends Applet implements ExtendedLength
 	 */
 	public IsoscelesApplet(byte[] buffer, short offset, byte length)
 	{
-		// Allocate a new master file
-		masterFile = new DedicatedFile(MF_MAX_DATA_OBJECTS, new byte[]{ISO7816_FILE_RESERVED_P1, ISO7816_MASTER_FILE_P2});
+		// Save the Application ID
+		byte applicationIdLen = buffer[offset];
+		applicationId = new byte[applicationIdLen];
+		Util.arrayCopy(buffer, (short)(offset+1), applicationId, OFFSET_NONE, applicationIdLen);
 
-		DataObject answerToSelect = new DataObject (TAG_DO_ATS, OFFSET_NONE, (short)TAG_DO_ATS.length);
-		byte[] emptyAts = new byte[] {};
-		answerToSelect.setData(emptyAts);
-		masterFile.putData(answerToSelect);
+		// Allocate a new master file and provide the Application ID
+		masterFile = new DedicatedFile(MF_MAX_DATA_OBJECTS, new byte[]{ISO7816_FILE_RESERVED_P1, ISO7816_MASTER_FILE_P2}, applicationId);
 
+		// Set file target pointers
 		currentDedicatedFile = masterFile;
 		currentApplicationDedicatedFile = masterFile;
 
@@ -127,10 +148,10 @@ public class IsoscelesApplet extends Applet implements ExtendedLength
 
 		// If the applet is being selected, send the ATS for the master file
 		if (selectingApplet()) {
-			sendAts(apdu, masterFile);
+			SendFci(apdu, masterFile);
 			return;
 		} else if (ins == INS_PUT_DATA) {
-			putData(apdu);
+			HandlePutData(apdu);
 			return;
 		}
 
@@ -141,7 +162,7 @@ public class IsoscelesApplet extends Applet implements ExtendedLength
 	 * Put Data command (ISO7816-4).  Puts a data object into a specified data file.
 	 * @param apdu APDU to process
 	 */
-	public void putData(APDU apdu) {
+	public void HandlePutData(APDU apdu) {
 		// Only support the current dedicated file
 		byte[] apduBuffer = apdu.getBuffer();
 		byte cla = apduBuffer[ISO7816.OFFSET_CLA];
@@ -222,8 +243,69 @@ public class IsoscelesApplet extends Applet implements ExtendedLength
 		apdu.setOutgoingLength((short)ats.length);
 
 		// Put the ATS value into the buffer
-		Util.arrayCopyNonAtomic(ats, OFFSET_NONE, apduBuffer, ISO7816.OFFSET_EXT_CDATA, (short)ats.length);
-		apdu.sendBytes(ISO7816.OFFSET_EXT_CDATA, (short)ats.length);
+		Util.arrayCopyNonAtomic(ats, OFFSET_NONE, apduBuffer, OFFSET_NONE, (short)ats.length);
+		apdu.sendBytes(OFFSET_NONE, (short)ats.length);
+		ISOException.throwIt(ISO7816.SW_NO_ERROR);
+	}
+
+	/**
+	 * Sends file control information.  Used when P2 & 0xFC is zero.
+	 * See ISO/IEC 7816‐4:2020, Table 63.
+	 */
+	public void SendFci(APDU apdu, DedicatedFile dedicatedFile) {
+		byte[] apduBuffer = apdu.getBuffer();
+		byte cla = apduBuffer[ISO7816.OFFSET_CLA];
+		short le = apdu.setOutgoing();
+
+		// Dynamically generate the FCI template
+		byte[] dfName = dedicatedFile.GetName();
+		byte[] fileIdentifier = dedicatedFile.GetFilename();
+
+		// Build the template in fixedTemporaryBuffer
+		short len = 0x00;
+		short fciLenOffset;
+
+		// [FCI Template Tag] [Le]
+		Util.arrayCopy(TAG_FCI_TEMPLATE, OFFSET_NONE, fixedTemporaryBuffer, len, (short)TAG_FCI_TEMPLATE.length);
+		len += (short)TAG_FCI_TEMPLATE.length;
+		fciLenOffset = len;
+		len += (short)1;
+
+		// [File Identifier Tag] [Le] [File Identifier]
+		if ((fileIdentifier != null) && Util.makeShort(fileIdentifier[0], fileIdentifier[1]) != 0) {
+			Util.arrayCopy(TAG_FCI_FILE_IDENTIFIER, OFFSET_NONE, fixedTemporaryBuffer, len, (short)(TAG_FCI_FILE_IDENTIFIER.length));
+			len += (short)TAG_FCI_FILE_IDENTIFIER.length;
+			fixedTemporaryBuffer[len] = (byte)(fileIdentifier.length);
+			len += (short) 1;
+			Util.arrayCopy(fileIdentifier, OFFSET_NONE, fixedTemporaryBuffer, len, (short)(fileIdentifier.length));
+			len += (short)(fileIdentifier.length);
+		}
+
+		// [DF Name Tag] [Le] [DF Name]
+		if ((dfName != null) && dfName.length > 0) {
+			Util.arrayCopy(TAG_FCI_DF_NAME, OFFSET_NONE, fixedTemporaryBuffer, len, (short)(TAG_FCI_DF_NAME.length));
+			len += (short)(TAG_FCI_DF_NAME.length);
+			fixedTemporaryBuffer[len] = (byte)(dfName.length);
+			len += (short)1;
+			Util.arrayCopy(dfName, OFFSET_NONE, fixedTemporaryBuffer, len, (short)(dfName.length));
+			len += (short)(dfName.length);
+		}
+
+		// Fixup the length byte
+		fixedTemporaryBuffer[fciLenOffset] = (byte)(len - fciLenOffset - 1);
+
+		// Verify the parameters
+		if (le != (short)0x00 && le < len) {
+			ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+		} else if (cla != ISO7816.CLA_ISO7816) {
+			ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
+		}
+
+		// And send it
+		Util.arrayCopy(fixedTemporaryBuffer, OFFSET_NONE, apduBuffer, OFFSET_NONE, len);
+
+		apdu.setOutgoingLength(len);
+		apdu.sendBytes(OFFSET_NONE, len);
 		ISOException.throwIt(ISO7816.SW_NO_ERROR);
 	}
 }
