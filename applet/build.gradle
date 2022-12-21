@@ -67,6 +67,12 @@ dependencies {
     runtimeOnly 'com.klinec:gradle-javacard:1.8.0'
 }
 
+// Force UTF-8
+compileJava.options.encoding = 'UTF-8'
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8' 
+}
+
 task dumpClassPath(dependsOn: ['idea']) {
     doLast {
         println "Gradle classpath:\n- " + configurations.compile.files*.name.join("\n- ")
@@ -82,6 +88,8 @@ application {
 }
 
 test {
+    systemProperty "file.encoding", "utf-8"
+
     // useTestNG()
     useJUnitPlatform {
         excludeTags 'manual'
@@ -117,7 +125,6 @@ final def JC310b43 = libsSdk + '/jc310b43_kit'
 final def JC_SELECTED = JC310b43
 
 javacard {
-
     //noinspection GroovyAssignabilityCheck
     config {
         jckit JC_SELECTED

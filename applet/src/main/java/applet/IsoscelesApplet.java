@@ -250,7 +250,7 @@ public class IsoscelesApplet extends Applet implements ExtendedLength
 
 	/**
 	 * Sends file control information.  Used when P2 & 0xFC is zero.
-	 * See ISO/IEC 7816‐4:2020, Table 63.
+	 * See ISO/IEC 7816 4:2020, Table 63.
 	 */
 	public void SendFci(APDU apdu, DedicatedFile dedicatedFile) {
 		byte[] apduBuffer = apdu.getBuffer();
